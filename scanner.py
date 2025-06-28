@@ -10,6 +10,7 @@ import logging
 import tempfile
 from datetime import datetime
 from typing import Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
 import config
 
 logger = logging.getLogger(__name__)
@@ -105,8 +106,10 @@ class HPScanner:
         try:
             logger.info("Начало сканирования...")
             
-            # Выполнение сканирования
-            scan_data = await asyncio.to_thread(self.device.scan)
+            # Выполнение сканирования (совместимость с Python 3.7)
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                scan_data = await loop.run_in_executor(executor, self.device.scan)
             
             if not scan_data:
                 raise ScannerError("Не удалось получить данные сканирования")
@@ -119,8 +122,9 @@ class HPScanner:
             filename = f"scan_{timestamp}.{config.SCAN_FORMAT.lower()}"
             filepath = config.SCAN_DIR / filename
             
-            # Сохранение файла
-            await asyncio.to_thread(image.save, filepath, config.SCAN_FORMAT)
+            # Сохранение файла (совместимость с Python 3.7)
+            with ThreadPoolExecutor() as executor:
+                await loop.run_in_executor(executor, lambda: image.save(filepath, config.SCAN_FORMAT))
             
             # Проверка размера файла
             file_size_mb = filepath.stat().st_size / (1024 * 1024)
@@ -147,7 +151,11 @@ class HPScanner:
                 # Для PNG - уменьшение размера
                 width, height = image.size
                 new_size = (int(width * 0.8), int(height * 0.8))
-                image = image.resize(new_size, Image.Resampling.LANCZOS)
+                # Совместимость со старыми версиями Pillow
+                try:
+                    image = image.resize(new_size, Image.Resampling.LANCZOS)
+                except AttributeError:
+                    image = image.resize(new_size, Image.LANCZOS)
                 image.save(filepath, config.SCAN_FORMAT)
             
             logger.info(f"Изображение сжато: {filepath}")
