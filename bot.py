@@ -502,10 +502,31 @@ class ScanBot:
             cleanup_task = asyncio.create_task(self._auto_cleanup_task())
             
             try:
-                # Запуск бота
-                logger.info("Запускаю polling бота...")
-                await self.application.run_polling(drop_pending_updates=True)
+                # Инициализация и запуск бота в существующем event loop
+                logger.info("Инициализирую приложение...")
+                await self.application.initialize()
+                
+                logger.info("Запускаю updater...")
+                await self.application.updater.start_polling(drop_pending_updates=True)
+                
+                logger.info("Запускаю обработку...")
+                await self.application.start()
+                
+                # Ожидание завершения (бесконечный цикл)
+                logger.info("Бот запущен. Ожидаю сообщения...")
+                while True:
+                    await asyncio.sleep(1)
+                    
             finally:
+                # Корректное завершение
+                logger.info("Останавливаю бота...")
+                try:
+                    await self.application.stop()
+                    await self.application.updater.stop()
+                    await self.application.shutdown()
+                except Exception as stop_error:
+                    logger.error(f"Ошибка при остановке бота: {stop_error}")
+                
                 # Отменяем задачу автоочистки
                 logger.info("Отменяю задачу автоочистки...")
                 cleanup_task.cancel()
