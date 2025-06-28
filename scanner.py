@@ -114,8 +114,37 @@ class HPScanner:
             if not scan_data:
                 raise ScannerError("Не удалось получить данные сканирования")
             
-            # Конвертация в изображение PIL
-            image = Image.fromarray(scan_data)
+            logger.info(f"Тип данных сканирования: {type(scan_data)}")
+            
+            # Обработка разных типов данных от SANE
+            if isinstance(scan_data, Image.Image):
+                # Если уже PIL Image
+                image = scan_data
+                logger.info("Получен PIL Image напрямую")
+            elif hasattr(scan_data, 'save'):
+                # Если это PIL-подобный объект
+                image = scan_data
+                logger.info("Получен PIL-подобный объект")
+            else:
+                try:
+                    # Попытка создать PIL Image из массива
+                    import numpy as np
+                    if isinstance(scan_data, np.ndarray):
+                        image = Image.fromarray(scan_data)
+                        logger.info("Создан PIL Image из numpy array")
+                    else:
+                        # Попытка конвертации в массив
+                        scan_array = np.array(scan_data)
+                        image = Image.fromarray(scan_array)
+                        logger.info("Создан PIL Image через numpy.array()")
+                except Exception as conv_error:
+                    logger.error(f"Ошибка конвертации данных: {conv_error}")
+                    # Последняя попытка - сохранить как есть
+                    if hasattr(scan_data, 'mode') and hasattr(scan_data, 'size'):
+                        image = scan_data
+                        logger.info("Используем данные как есть")
+                    else:
+                        raise ScannerError(f"Неподдерживаемый тип данных сканирования: {type(scan_data)}")
             
             # Генерация имени файла
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
