@@ -80,15 +80,16 @@ class HPScanner:
                 self.device.mode = config.SCAN_MODE
                 logger.info(f"Установлен режим: {config.SCAN_MODE}")
             
-            # Установка области сканирования (A4)
-            if hasattr(self.device, 'tl_x'):
-                self.device.tl_x = 0
-            if hasattr(self.device, 'tl_y'):
-                self.device.tl_y = 0
-            if hasattr(self.device, 'br_x'):
-                self.device.br_x = 210  # A4 width in mm
-            if hasattr(self.device, 'br_y'):
-                self.device.br_y = 297  # A4 height in mm
+            # Для HP M177fw лучше использовать значения по умолчанию
+            # Попробуем установить только начальные координаты
+            try:
+                if hasattr(self.device, 'tl_x'):
+                    self.device.tl_x = 0
+                if hasattr(self.device, 'tl_y'):
+                    self.device.tl_y = 0
+                logger.info("Установлены координаты начала сканирования")
+            except Exception as coord_error:
+                logger.warning(f"Не удалось установить координаты: {coord_error}")
             
             logger.info("Параметры сканера настроены")
             
