@@ -496,17 +496,28 @@ class ScanBot:
             await scanner.initialize()
             
             # Создание задачи для автоочистки
-            asyncio.create_task(self._auto_cleanup_task())
+            cleanup_task = asyncio.create_task(self._auto_cleanup_task())
             
-            # Запуск бота
-            await self.application.run_polling(drop_pending_updates=True)
+            try:
+                # Запуск бота
+                await self.application.run_polling(drop_pending_updates=True)
+            finally:
+                # Отменяем задачу автоочистки
+                cleanup_task.cancel()
+                try:
+                    await cleanup_task
+                except asyncio.CancelledError:
+                    pass
             
         except Exception as e:
             logger.error(f"Ошибка запуска бота: {e}")
             raise
         finally:
             # Очистка ресурсов
-            scanner.cleanup()
+            try:
+                scanner.cleanup()
+            except Exception as cleanup_error:
+                logger.error(f"Ошибка при очистке ресурсов: {cleanup_error}")
     
     async def _auto_cleanup_task(self):
         """Автоматическая очистка старых файлов"""
