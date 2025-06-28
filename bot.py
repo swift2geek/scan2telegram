@@ -493,24 +493,31 @@ class ScanBot:
             logger.info("Запуск Telegram бота...")
             
             # Инициализация сканера
+            logger.info("Инициализирую сканер...")
             await scanner.initialize()
+            logger.info("Сканер инициализирован успешно")
             
             # Создание задачи для автоочистки
+            logger.info("Создаю задачу автоочистки...")
             cleanup_task = asyncio.create_task(self._auto_cleanup_task())
             
             try:
                 # Запуск бота
+                logger.info("Запускаю polling бота...")
                 await self.application.run_polling(drop_pending_updates=True)
             finally:
                 # Отменяем задачу автоочистки
+                logger.info("Отменяю задачу автоочистки...")
                 cleanup_task.cancel()
                 try:
                     await cleanup_task
                 except asyncio.CancelledError:
-                    pass
+                    logger.info("Задача автоочистки отменена")
             
         except Exception as e:
+            import traceback
             logger.error(f"Ошибка запуска бота: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     async def _auto_cleanup_task(self):
