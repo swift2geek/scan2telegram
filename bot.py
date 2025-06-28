@@ -512,12 +512,6 @@ class ScanBot:
         except Exception as e:
             logger.error(f"Ошибка запуска бота: {e}")
             raise
-        finally:
-            # Очистка ресурсов
-            try:
-                scanner.cleanup()
-            except Exception as cleanup_error:
-                logger.error(f"Ошибка при очистке ресурсов: {cleanup_error}")
     
     async def _auto_cleanup_task(self):
         """Автоматическая очистка старых файлов"""
