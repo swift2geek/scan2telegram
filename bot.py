@@ -3,6 +3,7 @@ Telegram бот для сканирования документов
 """
 import asyncio
 import logging
+import html
 from pathlib import Path
 from datetime import datetime, timedelta
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
@@ -43,15 +44,9 @@ class ScanBot:
             self.application.add_handler(CallbackQueryHandler(self.button_callback))
             
             # Обработчик для печати файлов (файлы с упоминанием бота)
-            self.application.add_handler(
-                MessageHandler(
-                    filters.PHOTO | filters.DOCUMENT,
-                    self.handle_print_request
-                )
-            )
-            
-            # Обработчик для неизвестных команд
-            self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.unknown_command))
+            # Используем filters.ALL чтобы получать ВСЕ сообщения, включая упоминания в группах
+            # Проверка файла и упоминания делается внутри обработчика
+            self.application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, self.handle_all_messages))
             
             logger.info("Telegram бот инициализирован")
             
@@ -271,7 +266,8 @@ class ScanBot:
 
 *Основные функции:*
 • 🖨️ *Сканирование* - создает PDF/JPEG файл документа
-• 📊 *Статус* - показывает состояние сканера  
+• 🖨️ *Печать* - отправляет файлы на печать (отправьте файл и упомяните бота @scan_2_telegram_bot)
+• 📊 *Статус* - показывает состояние сканера и принтера
 • 🗑️ *Очистка* - удаляет старые файлы сканирования
 • ❓ *Помощь* - это сообщение
 
@@ -279,6 +275,12 @@ class ScanBot:
 • Разрешение: {config.SCAN_DPI} DPI
 • Режим: {config.SCAN_MODE}
 • Формат: {config.SCAN_FORMAT}
+
+*Печать файлов:*
+• Отправьте файл (фото, PDF, документ) в группу
+• Упомяните бота в сообщении: @scan_2_telegram_bot
+• Бот автоматически отправит файл на печать
+• Поддерживаемые форматы: JPG, PNG, PDF, TXT и другие
 
 *Автоматика:*
 • Файлы удаляются автоматически через {config.CLEANUP_AFTER_HOURS} часов
@@ -319,7 +321,8 @@ class ScanBot:
 
 *Основные функции:*
 • 🖨️ *Сканирование* - создает PDF/JPEG файл документа
-• 📊 *Статус* - показывает состояние сканера  
+• 🖨️ *Печать* - отправляет файлы на печать (отправьте файл и упомяните бота @scan_2_telegram_bot)
+• 📊 *Статус* - показывает состояние сканера и принтера
 • 🗑️ *Очистка* - удаляет старые файлы сканирования
 • ❓ *Помощь* - это сообщение
 
@@ -327,6 +330,12 @@ class ScanBot:
 • Разрешение: {config.SCAN_DPI} DPI
 • Режим: {config.SCAN_MODE}
 • Формат: {config.SCAN_FORMAT}
+
+*Печать файлов:*
+• Отправьте файл (фото, PDF, документ) в группу
+• Упомяните бота в сообщении: @scan_2_telegram_bot
+• Бот автоматически отправит файл на печать
+• Поддерживаемые форматы: JPG, PNG, PDF, TXT и другие
 
 *Автоматика:*
 • Файлы удаляются автоматически через {config.CLEANUP_AFTER_HOURS} часов
@@ -431,22 +440,35 @@ class ScanBot:
                 "error": "❌"
             }.get(printer_status["status"], "❓")
             
+            # Экранируем все поля для безопасного отображения в Markdown
+            scanner_message = html.escape(str(scanner_status.get("message", "Неизвестно")))
+            scanner_device = html.escape(str(scanner_status.get("device", "Неизвестно")))
+            scanner_dpi = str(scanner_status.get("dpi", config.SCAN_DPI))
+            scanner_mode = html.escape(str(scanner_status.get("mode", config.SCAN_MODE)))
+            scanner_format = html.escape(str(scanner_status.get("format", config.SCAN_FORMAT)))
+            
+            printer_message = html.escape(str(printer_status.get("message", "Неизвестно")))
+            printer_name = html.escape(str(printer_status.get("name", config.PRINTER_NAME)))
+            
+            scan_dir = html.escape(str(config.SCAN_DIR))
+            file_count = len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0
+            
             status_text = f"""
 {scanner_emoji} *Статус сканера*
 
-*Состояние:* {scanner_status["message"]}
-*Устройство:* {scanner_status.get("device", "Неизвестно")}
-*Разрешение:* {scanner_status.get("dpi", config.SCAN_DPI)} DPI
-*Режим:* {scanner_status.get("mode", config.SCAN_MODE)}
-*Формат:* {scanner_status.get("format", config.SCAN_FORMAT)}
+*Состояние:* {scanner_message}
+*Устройство:* {scanner_device}
+*Разрешение:* {scanner_dpi} DPI
+*Режим:* {scanner_mode}
+*Формат:* {scanner_format}
 
 {printer_emoji} *Статус принтера*
 
-*Состояние:* {printer_status["message"]}
-*Принтер:* {printer_status.get("printer", config.PRINTER_NAME)}
+*Состояние:* {printer_message}
+*Принтер:* {printer_name}
 
-*Директория сканов:* `{config.SCAN_DIR}`
-*Количество файлов:* {len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0}
+*Директория сканов:* `{scan_dir}`
+*Количество файлов:* {file_count}
             """
             
             await update.message.reply_text(
@@ -492,39 +514,81 @@ class ScanBot:
             )
             logger.error(f"Ошибка очистки для пользователя {user_id}: {e}")
     
+    async def handle_all_messages(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик всех сообщений - логирует и перенаправляет на печать если нужно"""
+        # Логируем все входящие сообщения для отладки
+        user_id = update.effective_user.id if update.effective_user else "unknown"
+        chat_id = update.effective_chat.id if update.effective_chat else "unknown"
+        has_photo = bool(update.message and update.message.photo)
+        has_document = bool(update.message and update.message.document)
+        caption = update.message.caption if update.message else None
+        text = update.message.text if update.message else None
+        
+        logger.info(f"📨 Получено сообщение: user={user_id}, chat={chat_id}, photo={has_photo}, doc={has_document}, caption={caption}, text={text}")
+        
+        # Если есть файл (фото или документ), обрабатываем как запрос на печать
+        if has_photo or has_document:
+            await self.handle_print_request(update, context)
+        # Иначе - игнорируем (текстовые сообщения без команд)
+    
     async def handle_print_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик запросов на печать файлов"""
+        logger.info(f"Обработка файла для печати от пользователя {update.effective_user.id}")
+        
         if not self._is_authorized(update):
+            logger.debug("Запрос на печать от неавторизованного пользователя")
             return
         
         # Проверяем, что бот упомянут в сообщении или в подписи к файлу
         bot_mentioned = False
         bot_username = (await self.bot.get_me()).username.lower()
         
+        logger.info(f"Проверка упоминания бота. Username: {bot_username}")
+        
         # Проверяем упоминания в тексте сообщения
         if update.message.text:
             text_lower = update.message.text.lower()
+            logger.info(f"Текст сообщения: {text_lower}")
             if f"@{bot_username}" in text_lower:
                 bot_mentioned = True
+                logger.info(f"✅ Бот упомянут в тексте сообщения")
         
         # Проверяем упоминания в entities
         if not bot_mentioned and update.message.entities:
             for entity in update.message.entities:
                 if entity.type == MessageEntity.MENTION:
                     mention_text = update.message.text[entity.offset:entity.offset + entity.length].lower()
+                    logger.info(f"Найдено упоминание в entities: {mention_text}")
                     if f"@{bot_username}" in mention_text:
                         bot_mentioned = True
+                        logger.info(f"✅ Бот упомянут через entity")
                         break
         
         # Проверяем упоминания в подписи к файлу
         if not bot_mentioned and update.message.caption:
             caption_lower = update.message.caption.lower()
+            logger.info(f"Подпись к файлу: {caption_lower}")
             if f"@{bot_username}" in caption_lower:
                 bot_mentioned = True
+                logger.info(f"✅ Бот упомянут в подписи к файлу")
+        
+        # Проверяем упоминания в caption_entities
+        if not bot_mentioned and update.message.caption_entities:
+            for entity in update.message.caption_entities:
+                if entity.type == MessageEntity.MENTION:
+                    mention_text = update.message.caption[entity.offset:entity.offset + entity.length].lower()
+                    logger.info(f"Найдено упоминание в caption_entities: {mention_text}")
+                    if f"@{bot_username}" in mention_text:
+                        bot_mentioned = True
+                        logger.info(f"✅ Бот упомянут через caption_entity")
+                        break
         
         # Если бот не упомянут, игнорируем сообщение
         if not bot_mentioned:
+            logger.info(f"❌ Бот не упомянут в сообщении, игнорируем. Username для проверки: @{bot_username}")
             return
+        
+        logger.info(f"Обработка запроса на печать от пользователя {update.effective_user.id}")
         
         user_id = update.effective_user.id
         status_message = await update.message.reply_text("🖨️ Подготовка файла к печати...")

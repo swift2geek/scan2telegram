@@ -72,33 +72,39 @@ class Printer:
     async def _check_printer_status(self, printer_name: str) -> bool:
         """Проверка доступности принтера"""
         try:
+            logger.info(f"Проверка доступности принтера: {printer_name}")
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
                 result = await loop.run_in_executor(
                     executor,
                     lambda: subprocess.run(
-                        ['lpstat', '-p', printer_name],
+                        ['/usr/bin/lpstat', '-p', printer_name],
                         capture_output=True,
                         text=True,
                         timeout=5
                     )
                 )
             
+            logger.info(f"lpstat вернул код: {result.returncode}, stdout: {result.stdout[:100]}, stderr: {result.stderr[:100] if result.stderr else 'None'}")
+            
             if result.returncode == 0:
                 # Проверяем, что принтер не отключен
-                if 'disabled' in result.stdout.lower():
+                output_lower = result.stdout.lower()
+                if 'disabled' in output_lower:
                     logger.warning(f"Принтер {printer_name} отключен")
                     return False
+                if 'offline' in output_lower:
+                    logger.warning(f"Принтер {printer_name} оффлайн")
+                    return False
+                logger.info(f"Принтер {printer_name} доступен")
                 return True
             else:
-                logger.error(f"Принтер {printer_name} не найден: {result.stderr}")
+                error_msg = result.stderr.strip() if result.stderr else "Неизвестная ошибка"
+                logger.error(f"Принтер {printer_name} не найден или недоступен: {error_msg}")
                 return False
                 
-        except subprocess.TimeoutExpired:
-            logger.error(f"Таймаут при проверке принтера {printer_name}")
-            return False
         except Exception as e:
-            logger.error(f"Ошибка проверки принтера {printer_name}: {e}")
+            logger.error(f"Ошибка проверки принтера {printer_name}: {e}", exc_info=True)
             return False
     
     async def _prepare_file_for_printing(self, file_path: Path) -> Path:
@@ -232,7 +238,7 @@ class Printer:
                 result = await loop.run_in_executor(
                     executor,
                     lambda: subprocess.run(
-                        ['lp', '-d', printer_name, str(file_path)],
+                        ['/usr/bin/lp', '-d', printer_name, str(file_path)],
                         capture_output=True,
                         text=True,
                         timeout=60
@@ -257,13 +263,20 @@ class Printer:
     
     async def get_printer_status(self) -> dict:
         """Получение статуса принтера"""
+        if not self.printer_name:
+            return {
+                "status": "error",
+                "name": "Не указан",
+                "message": "Имя принтера не указано в конфигурации"
+            }
+        
         try:
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
                 result = await loop.run_in_executor(
                     executor,
                     lambda: subprocess.run(
-                        ['lpstat', '-p', self.printer_name, '-l'],
+                        ['/usr/bin/lpstat', '-p', self.printer_name, '-l'],
                         capture_output=True,
                         text=True,
                         timeout=5
@@ -274,27 +287,51 @@ class Printer:
                 status_text = result.stdout
                 is_enabled = 'enabled' in status_text.lower()
                 is_idle = 'idle' in status_text.lower()
+                is_disabled = 'disabled' in status_text.lower()
+                is_offline = 'offline' in status_text.lower()
+                
+                # Определяем статус
+                if is_disabled:
+                    status = "error"
+                    message = "Принтер отключен"
+                elif is_offline:
+                    status = "error"
+                    message = "Принтер оффлайн"
+                elif is_enabled and is_idle:
+                    status = "ready"
+                    message = "Принтер готов к работе"
+                else:
+                    status = "busy"
+                    message = "Принтер занят (есть задания в очереди)"
                 
                 return {
-                    "status": "ready" if (is_enabled and is_idle) else "busy",
+                    "status": status,
                     "enabled": is_enabled,
                     "idle": is_idle,
-                    "printer": self.printer_name,
-                    "message": status_text.split('\n')[0] if status_text else "Unknown status"
+                    "name": self.printer_name,
+                    "message": message
                 }
             else:
+                error_msg = result.stderr.strip() if result.stderr else "Неизвестная ошибка"
                 return {
                     "status": "error",
-                    "printer": self.printer_name,
-                    "message": f"Принтер недоступен: {result.stderr.strip()}"
+                    "name": self.printer_name,
+                    "message": f"Принтер недоступен: {error_msg}"
                 }
                 
+        except subprocess.TimeoutExpired:
+            logger.error(f"Таймаут при проверке статуса принтера {self.printer_name}")
+            return {
+                "status": "error",
+                "name": self.printer_name,
+                "message": "Таймаут при проверке статуса принтера"
+            }
         except Exception as e:
             logger.error(f"Ошибка получения статуса принтера: {e}")
             return {
                 "status": "error",
-                "printer": self.printer_name,
-                "message": f"Ошибка проверки статуса: {e}"
+                "name": self.printer_name,
+                "message": f"Ошибка проверки статуса: {str(e)}"
             }
 
 # Глобальный экземпляр принтера
