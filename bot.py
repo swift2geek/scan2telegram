@@ -5,7 +5,7 @@ import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timedelta
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -16,6 +16,7 @@ from telegram.ext import (
 )
 import config
 from scanner import scanner, ScannerError
+from printer import printer, PrinterError
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,14 @@ class ScanBot:
             
             # Обработчик для callback запросов (кнопки)
             self.application.add_handler(CallbackQueryHandler(self.button_callback))
+            
+            # Обработчик для печати файлов (файлы с упоминанием бота)
+            self.application.add_handler(
+                MessageHandler(
+                    filters.PHOTO | filters.DOCUMENT,
+                    self.handle_print_request
+                )
+            )
             
             # Обработчик для неизвестных команд
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.unknown_command))
@@ -405,22 +414,36 @@ class ScanBot:
         
         try:
             # Получение статуса сканера
-            status = await scanner.get_scanner_status()
+            scanner_status = await scanner.get_scanner_status()
             
-            status_emoji = {
+            # Получение статуса принтера
+            printer_status = await printer.get_printer_status()
+            
+            scanner_emoji = {
                 "ready": "✅",
                 "not_initialized": "⚠️",
                 "error": "❌"
-            }.get(status["status"], "❓")
+            }.get(scanner_status["status"], "❓")
+            
+            printer_emoji = {
+                "ready": "✅",
+                "busy": "🔄",
+                "error": "❌"
+            }.get(printer_status["status"], "❓")
             
             status_text = f"""
-{status_emoji} *Статус сканера*
+{scanner_emoji} *Статус сканера*
 
-*Состояние:* {status["message"]}
-*Устройство:* {status.get("device", "Неизвестно")}
-*Разрешение:* {status.get("dpi", config.SCAN_DPI)} DPI
-*Режим:* {status.get("mode", config.SCAN_MODE)}
-*Формат:* {status.get("format", config.SCAN_FORMAT)}
+*Состояние:* {scanner_status["message"]}
+*Устройство:* {scanner_status.get("device", "Неизвестно")}
+*Разрешение:* {scanner_status.get("dpi", config.SCAN_DPI)} DPI
+*Режим:* {scanner_status.get("mode", config.SCAN_MODE)}
+*Формат:* {scanner_status.get("format", config.SCAN_FORMAT)}
+
+{printer_emoji} *Статус принтера*
+
+*Состояние:* {printer_status["message"]}
+*Принтер:* {printer_status.get("printer", config.PRINTER_NAME)}
 
 *Директория сканов:* `{config.SCAN_DIR}`
 *Количество файлов:* {len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0}
@@ -468,6 +491,102 @@ class ScanBot:
                 reply_markup=self._get_main_keyboard()
             )
             logger.error(f"Ошибка очистки для пользователя {user_id}: {e}")
+    
+    async def handle_print_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик запросов на печать файлов"""
+        if not self._is_authorized(update):
+            return
+        
+        # Проверяем, что бот упомянут в сообщении или в подписи к файлу
+        bot_mentioned = False
+        bot_username = (await self.bot.get_me()).username.lower()
+        
+        # Проверяем упоминания в тексте сообщения
+        if update.message.text:
+            text_lower = update.message.text.lower()
+            if f"@{bot_username}" in text_lower:
+                bot_mentioned = True
+        
+        # Проверяем упоминания в entities
+        if not bot_mentioned and update.message.entities:
+            for entity in update.message.entities:
+                if entity.type == MessageEntity.MENTION:
+                    mention_text = update.message.text[entity.offset:entity.offset + entity.length].lower()
+                    if f"@{bot_username}" in mention_text:
+                        bot_mentioned = True
+                        break
+        
+        # Проверяем упоминания в подписи к файлу
+        if not bot_mentioned and update.message.caption:
+            caption_lower = update.message.caption.lower()
+            if f"@{bot_username}" in caption_lower:
+                bot_mentioned = True
+        
+        # Если бот не упомянут, игнорируем сообщение
+        if not bot_mentioned:
+            return
+        
+        user_id = update.effective_user.id
+        status_message = await update.message.reply_text("🖨️ Подготовка файла к печати...")
+        
+        try:
+            # Определяем тип файла и получаем его
+            file_to_download = None
+            file_name = None
+            
+            if update.message.document:
+                file_to_download = update.message.document
+                file_name = file_to_download.file_name or f"document_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            elif update.message.photo:
+                # Берем фото наибольшего размера
+                file_to_download = update.message.photo[-1]
+                file_name = f"photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            elif update.message.sticker:
+                # Обработка стикеров (конвертируем в изображение)
+                file_to_download = update.message.sticker
+                file_name = f"sticker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            else:
+                await status_message.edit_text("❌ Не удалось определить тип файла для печати.")
+                return
+            
+            # Скачиваем файл
+            await status_message.edit_text("📥 Скачиваю файл...")
+            file = await file_to_download.get_file()
+            
+            # Сохраняем во временную директорию
+            temp_file = config.PRINT_TEMP_DIR / file_name
+            await file.download_to_drive(temp_file)
+            
+            logger.info(f"Пользователь {user_id} запросил печать файла: {file_name}")
+            
+            # Отправляем на печать
+            await status_message.edit_text("🖨️ Отправляю на печать...")
+            success = await printer.print_file(temp_file)
+            
+            if success:
+                await status_message.edit_text(
+                    f"✅ Файл отправлен на печать!\n\n"
+                    f"📄 Файл: {file_name}\n"
+                    f"🖨️ Принтер: {config.PRINTER_NAME}\n"
+                    f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+                )
+                logger.info(f"Файл {file_name} успешно отправлен на печать пользователем {user_id}")
+            else:
+                await status_message.edit_text("❌ Не удалось отправить файл на печать. Проверьте статус принтера.")
+                
+        except PrinterError as e:
+            await status_message.edit_text(f"❌ Ошибка печати: {e}\n\nПроверьте статус принтера командой /status")
+            logger.error(f"Ошибка печати для пользователя {user_id}: {e}")
+        except Exception as e:
+            await status_message.edit_text(f"❌ Неожиданная ошибка: {e}\n\nПопробуйте еще раз позже.")
+            logger.error(f"Неожиданная ошибка при печати для пользователя {user_id}: {e}")
+        finally:
+            # Очистка временного файла
+            if 'temp_file' in locals() and temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception as e:
+                    logger.warning(f"Не удалось удалить временный файл {temp_file}: {e}")
     
     async def unknown_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик неизвестных сообщений"""
