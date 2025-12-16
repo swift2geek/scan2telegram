@@ -59,13 +59,16 @@ class ScanBot:
         # Проверяем ID пользователя (для личных сообщений)
         user_id = update.effective_user.id if update.effective_user else None
         if user_id and user_id in config.TELEGRAM_CHAT_IDS:
+            logger.debug(f"Авторизация по user_id: {user_id}")
             return True
         
         # Проверяем ID чата (для групп и каналов)
         chat_id = update.effective_chat.id if update.effective_chat else None
         if chat_id and chat_id in config.TELEGRAM_CHAT_IDS:
+            logger.debug(f"Авторизация по chat_id: {chat_id}")
             return True
         
+        logger.warning(f"Доступ запрещен: user_id={user_id}, chat_id={chat_id}, разрешенные={config.TELEGRAM_CHAT_IDS}")
         return False
     
     def _get_main_keyboard(self):
@@ -506,10 +509,8 @@ class ScanBot:
         try:
             logger.info("Запуск Telegram бота...")
             
-            # Инициализация сканера
-            logger.info("Инициализирую сканер...")
-            await scanner.initialize()
-            logger.info("Сканер инициализирован успешно")
+            # Сканер будет инициализирован лениво при первом запросе сканирования
+            logger.info("Сканер будет инициализирован при первом запросе сканирования")
             
             # Создание задачи для автоочистки
             logger.info("Создаю задачу автоочистки...")
