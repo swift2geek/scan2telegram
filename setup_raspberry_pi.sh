@@ -63,6 +63,19 @@ sudo apt install -y \
 print_status "Установка HPLIP для поддержки HP принтеров..."
 sudo apt install -y hplip hplip-gui
 
+# Установка HPLIP плагина (автоматически, без интерактивного режима)
+print_status "Установка HPLIP плагина..."
+if ! [ -f /var/lib/hp/hplip.state ]; then
+    print_status "Устанавливаю HPLIP плагин (может потребоваться подключение к интернету)..."
+    # Убиваем зависшие процессы и удаляем lock файл
+    sudo pkill -9 hp-plugin 2>/dev/null || true
+    sudo rm -f /var/hp-plugin.lock 2>/dev/null || true
+    # Отправляем 'd' для download, затем 'y' для подтверждения
+    (echo d; sleep 2; echo y) | sudo hp-plugin -i 2>&1 | grep -v "^$" || print_warning "Плагин HPLIP может потребовать ручной установки. Выполните: sudo hp-plugin"
+else
+    print_status "HPLIP плагин уже установлен"
+fi
+
 # Проверка подключения принтера
 print_status "Проверка подключения принтеров..."
 hp-check
