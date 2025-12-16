@@ -5,4 +5,4 @@ aiofiles==23.2.1
 asyncio-mqtt==0.16.1
 psutil==5.9.8
 python-sane==2.9.1
-numpy==1.21.6 
+numpy>=1.22.0 

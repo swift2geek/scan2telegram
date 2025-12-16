@@ -50,9 +50,23 @@ class ScanBot:
             logger.error(f"Ошибка инициализации бота: {e}")
             raise
     
-    def _is_authorized(self, user_id: int) -> bool:
-        """Проверка авторизации пользователя"""
-        return user_id in config.TELEGRAM_CHAT_IDS or not config.TELEGRAM_CHAT_IDS
+    def _is_authorized(self, update: Update) -> bool:
+        """Проверка авторизации пользователя или чата"""
+        # Если список пуст, разрешаем всем
+        if not config.TELEGRAM_CHAT_IDS:
+            return True
+        
+        # Проверяем ID пользователя (для личных сообщений)
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id and user_id in config.TELEGRAM_CHAT_IDS:
+            return True
+        
+        # Проверяем ID чата (для групп и каналов)
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id and chat_id in config.TELEGRAM_CHAT_IDS:
+            return True
+        
+        return False
     
     def _get_main_keyboard(self):
         """Создание основной клавиатуры с кнопками"""
@@ -72,7 +86,7 @@ class ScanBot:
         """Обработчик команды /start"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
@@ -94,7 +108,7 @@ class ScanBot:
         query = update.callback_query
         user_id = query.from_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await query.answer("❌ У вас нет доступа к этому боту.")
             return
         
@@ -285,7 +299,7 @@ class ScanBot:
         """Обработчик команды /help"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
@@ -324,7 +338,7 @@ class ScanBot:
         """Обработчик команды /scan"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
@@ -382,7 +396,7 @@ class ScanBot:
         """Обработчик команды /status"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
@@ -426,7 +440,7 @@ class ScanBot:
         """Обработчик команды /cleanup"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
@@ -456,7 +470,7 @@ class ScanBot:
         """Обработчик неизвестных сообщений"""
         user_id = update.effective_user.id
         
-        if not self._is_authorized(user_id):
+        if not self._is_authorized(update):
             return
         
         await update.message.reply_text(
