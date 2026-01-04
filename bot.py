@@ -196,34 +196,61 @@ class ScanBot:
         
         try:
             # Обновляем сообщение на загрузку
-            await query.edit_message_text("🔄 Получаю статус сканера...")
+            await query.edit_message_text("🔄 Получаю статус...")
             
             # Получение статуса сканера
-            status = await scanner.get_scanner_status()
+            scanner_status = await scanner.get_scanner_status()
             
-            status_emoji = {
+            # Получение статуса принтера
+            printer_status = await printer.get_printer_status()
+            
+            scanner_emoji = {
                 "ready": "✅",
                 "not_initialized": "⚠️",
                 "error": "❌"
-            }.get(status["status"], "❓")
+            }.get(scanner_status["status"], "❓")
             
-            status_text = f"""{status_emoji} *Статус сканера*
+            printer_emoji = {
+                "ready": "✅",
+                "busy": "🔄",
+                "error": "❌"
+            }.get(printer_status["status"], "❓")
+            
+            # Экранируем все поля для безопасного отображения в HTML
+            scanner_message = html.escape(str(scanner_status.get("message", "Неизвестно")))
+            scanner_device = html.escape(str(scanner_status.get("device", "Неизвестно")))
+            scanner_dpi = str(scanner_status.get("dpi", config.SCAN_DPI))
+            scanner_mode = html.escape(str(scanner_status.get("mode", config.SCAN_MODE)))
+            scanner_format = html.escape(str(scanner_status.get("format", config.SCAN_FORMAT)))
+            
+            printer_message = html.escape(str(printer_status.get("message", "Неизвестно")))
+            printer_name = html.escape(str(printer_status.get("name", config.PRINTER_NAME)))
+            
+            scan_dir = html.escape(str(config.SCAN_DIR))
+            file_count = len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0
+            
+            status_text = f"""{scanner_emoji} <b>Статус сканера</b>
 
-*Состояние:* {status["message"]}
-*Устройство:* {status.get("device", "Неизвестно")}
-*Разрешение:* {status.get("dpi", config.SCAN_DPI)} DPI
-*Режим:* {status.get("mode", config.SCAN_MODE)}
-*Формат:* {status.get("format", config.SCAN_FORMAT)}
+<b>Состояние:</b> {scanner_message}
+<b>Устройство:</b> {scanner_device}
+<b>Разрешение:</b> {scanner_dpi} DPI
+<b>Режим:</b> {scanner_mode}
+<b>Формат:</b> {scanner_format}
 
-*Директория сканов:* `{config.SCAN_DIR}`
-*Количество файлов:* {len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0}"""
+{printer_emoji} <b>Статус принтера</b>
+
+<b>Состояние:</b> {printer_message}
+<b>Принтер:</b> {printer_name}
+
+<b>Директория сканов:</b> <code>{scan_dir}</code>
+<b>Количество файлов:</b> {file_count}"""
             
             # Кнопка возврата к меню
             back_keyboard = [[InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]]
             
             await query.edit_message_text(
                 status_text, 
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup(back_keyboard)
             )
             
@@ -232,7 +259,7 @@ class ScanBot:
                 f"❌ Ошибка получения статуса: {e}",
                 reply_markup=self._get_main_keyboard()
             )
-            logger.error(f"Ошибка получения статуса для пользователя {user_id}: {e}")
+            logger.error(f"Ошибка получения статуса для пользователя {user_id}: {e}", exc_info=True)
     
     async def _handle_cleanup_callback(self, query):
         """Обработка нажатия кнопки очистки"""
@@ -499,26 +526,26 @@ class ScanBot:
             file_count = len(list(config.SCAN_DIR.glob("*"))) if config.SCAN_DIR.exists() else 0
             
             status_text = f"""
-{scanner_emoji} *Статус сканера*
+{scanner_emoji} <b>Статус сканера</b>
 
-*Состояние:* {scanner_message}
-*Устройство:* {scanner_device}
-*Разрешение:* {scanner_dpi} DPI
-*Режим:* {scanner_mode}
-*Формат:* {scanner_format}
+<b>Состояние:</b> {scanner_message}
+<b>Устройство:</b> {scanner_device}
+<b>Разрешение:</b> {scanner_dpi} DPI
+<b>Режим:</b> {scanner_mode}
+<b>Формат:</b> {scanner_format}
 
-{printer_emoji} *Статус принтера*
+{printer_emoji} <b>Статус принтера</b>
 
-*Состояние:* {printer_message}
-*Принтер:* {printer_name}
+<b>Состояние:</b> {printer_message}
+<b>Принтер:</b> {printer_name}
 
-*Директория сканов:* `{scan_dir}`
-*Количество файлов:* {file_count}
+<b>Директория сканов:</b> <code>{scan_dir}</code>
+<b>Количество файлов:</b> {file_count}
             """
             
             await update.message.reply_text(
                 status_text, 
-                parse_mode='Markdown',
+                parse_mode='HTML',
                 reply_markup=self._get_main_keyboard()
             )
             

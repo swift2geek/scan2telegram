@@ -63,6 +63,10 @@ sudo apt install -y \
 print_status "Установка HPLIP для поддержки HP принтеров..."
 sudo apt install -y hplip hplip-gui
 
+# Установка LibreOffice для конвертации DOCX в PDF
+print_status "Установка LibreOffice для конвертации документов..."
+sudo apt install -y libreoffice --no-install-recommends
+
 # Установка HPLIP плагина (автоматически, без интерактивного режима)
 print_status "Установка HPLIP плагина..."
 if ! [ -f /var/lib/hp/hplip.state ]; then

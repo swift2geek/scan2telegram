@@ -4,6 +4,7 @@
 import subprocess
 import logging
 import tempfile
+import os
 from pathlib import Path
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -235,25 +236,46 @@ class Printer:
             return file_path
     
     async def _convert_docx_to_pdf(self, file_path: Path) -> Path:
-        """Конвертация DOCX/DOC в PDF через pandoc"""
+        """Конвертация DOCX/DOC в PDF через LibreOffice"""
         try:
             output_pdf = self.temp_dir / f"{file_path.stem}_print.pdf"
             
-            logger.info(f"Конвертирую DOCX файл {file_path} в PDF через pandoc")
+            logger.info(f"Конвертирую DOCX файл {file_path} в PDF через LibreOffice")
             
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
+                # LibreOffice конвертирует в директорию, поэтому нужно указать выходную директорию
+                output_dir = output_pdf.parent
+                
+                # Устанавливаем PATH для поиска LibreOffice
+                env = os.environ.copy()
+                env['PATH'] = '/usr/bin:/usr/local/bin:/bin:' + env.get('PATH', '')
+                env['HOME'] = str(self.temp_dir)  # Устанавливаем HOME для LibreOffice
+                
                 result = await loop.run_in_executor(
                     executor,
                     lambda: subprocess.run(
-                        ['pandoc', str(file_path), '-o', str(output_pdf)],
+                        [
+                            '/usr/bin/libreoffice',
+                            '--headless',
+                            '--convert-to', 'pdf',
+                            '--outdir', str(output_dir),
+                            str(file_path)
+                        ],
                         capture_output=True,
                         text=True,
-                        timeout=60
+                        timeout=120,
+                        env=env
                     )
                 )
             
-            if result.returncode == 0 and output_pdf.exists():
+            # LibreOffice создает файл с тем же именем, но расширением .pdf
+            expected_pdf = output_dir / f"{file_path.stem}.pdf"
+            
+            if result.returncode == 0 and expected_pdf.exists():
+                # Переименовываем в нужное имя, если нужно
+                if expected_pdf != output_pdf:
+                    expected_pdf.rename(output_pdf)
                 logger.info(f"DOCX файл конвертирован в PDF: {output_pdf}")
                 return output_pdf
             else:
@@ -265,7 +287,7 @@ class Printer:
             logger.error("Таймаут при конвертации DOCX в PDF")
             raise PrinterError("Таймаут при конвертации DOCX в PDF")
         except FileNotFoundError:
-            raise PrinterError("Утилита 'pandoc' не найдена. Установите её: sudo apt install pandoc")
+            raise PrinterError("Утилита 'libreoffice' не найдена. Установите её: sudo apt install libreoffice")
         except Exception as e:
             logger.error(f"Ошибка конвертации DOCX в PDF: {e}")
             raise PrinterError(f"Не удалось конвертировать DOCX в PDF: {e}")

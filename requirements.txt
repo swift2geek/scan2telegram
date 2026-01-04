@@ -1,8 +1,54 @@
+# Python зависимости для Telegram бота сканирования и печати
+# Установка: pip install -r requirements.txt
+
+# Telegram Bot API
 python-telegram-bot==20.3
+
+# Конфигурация из .env файлов
 python-decouple==3.8
+
+# Обработка изображений
 Pillow==10.2.0
+numpy>=1.22.0
+
+# Асинхронная работа с файлами
 aiofiles==23.2.1
+
+# MQTT (опционально, если используется)
 asyncio-mqtt==0.16.1
+
+# Системная информация
 psutil==5.9.8
+
+# SANE (Scanner Access Now Easy) для работы со сканером
 python-sane==2.9.1
-numpy>=1.22.0 
+
+# ============================================
+# СИСТЕМНЫЕ ЗАВИСИМОСТИ (устанавливаются через apt)
+# ============================================
+# 
+# Базовые системные пакеты:
+# sudo apt install -y python3 python3-pip python3-venv python3-dev gcc
+# sudo apt install -y libjpeg-dev zlib1g-dev libpng-dev libfreetype6-dev
+# sudo apt install -y liblcms2-dev libopenjp2-7-dev libtiff5-dev libffi-dev
+#
+# Сканер (SANE):
+# sudo apt install -y sane-utils libsane libsane-dev
+#
+# Принтер (CUPS):
+# sudo apt install -y cups cups-client cups-bsd
+#
+# HP принтер (HPLIP):
+# sudo apt install -y hplip hplip-gui
+# sudo hp-plugin -i  # Интерактивная установка плагина
+#
+# Конвертация DOCX в PDF:
+# sudo apt install -y libreoffice --no-install-recommends
+#
+# Опционально (для pandoc, если нужен альтернативный способ):
+# sudo apt install -y pandoc texlive-latex-base
+#
+# ============================================
+# Для полной установки используйте скрипт:
+# sudo ./setup_raspberry_pi.sh
+# ============================================ 
