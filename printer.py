@@ -118,6 +118,10 @@ class Printer:
         if suffix in ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif']:
             return file_path
         
+        # Документы Word - конвертируем в PDF через pandoc
+        if suffix in ['.docx', '.doc']:
+            return await self._convert_docx_to_pdf(file_path)
+        
         # Текстовые файлы - конвертируем в PDF
         if suffix in ['.txt', '.text', '.log']:
             return await self._convert_text_to_pdf(file_path)
@@ -230,15 +234,64 @@ class Printer:
             # Если конвертация не удалась, возвращаем исходный файл
             return file_path
     
-    async def _send_to_printer(self, file_path: Path, printer_name: str) -> bool:
-        """Отправка файла на принтер через lp"""
+    async def _convert_docx_to_pdf(self, file_path: Path) -> Path:
+        """Конвертация DOCX/DOC в PDF через pandoc"""
         try:
+            output_pdf = self.temp_dir / f"{file_path.stem}_print.pdf"
+            
+            logger.info(f"Конвертирую DOCX файл {file_path} в PDF через pandoc")
+            
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as executor:
                 result = await loop.run_in_executor(
                     executor,
                     lambda: subprocess.run(
-                        ['/usr/bin/lp', '-d', printer_name, str(file_path)],
+                        ['pandoc', str(file_path), '-o', str(output_pdf)],
+                        capture_output=True,
+                        text=True,
+                        timeout=60
+                    )
+                )
+            
+            if result.returncode == 0 and output_pdf.exists():
+                logger.info(f"DOCX файл конвертирован в PDF: {output_pdf}")
+                return output_pdf
+            else:
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
+                logger.error(f"Ошибка конвертации DOCX в PDF: {error_msg}")
+                raise PrinterError(f"Не удалось конвертировать DOCX в PDF: {error_msg}")
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Таймаут при конвертации DOCX в PDF")
+            raise PrinterError("Таймаут при конвертации DOCX в PDF")
+        except FileNotFoundError:
+            raise PrinterError("Утилита 'pandoc' не найдена. Установите её: sudo apt install pandoc")
+        except Exception as e:
+            logger.error(f"Ошибка конвертации DOCX в PDF: {e}")
+            raise PrinterError(f"Не удалось конвертировать DOCX в PDF: {e}")
+    
+    async def _send_to_printer(self, file_path: Path, printer_name: str) -> bool:
+        """Отправка файла на принтер через lp"""
+        try:
+            # Определяем тип файла для правильных опций печати
+            suffix = file_path.suffix.lower()
+            lp_options = []
+            
+            # Для PDF файлов добавляем опции для правильной печати
+            if suffix == '.pdf':
+                lp_options = ['-o', 'media=A4', '-o', 'fit-to-page']
+                logger.info(f"Печать PDF файла с опциями: {lp_options}")
+            
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as executor:
+                # Формируем команду lp с опциями
+                lp_command = ['/usr/bin/lp', '-d', printer_name] + lp_options + [str(file_path)]
+                logger.info(f"Выполняю команду: {' '.join(lp_command)}")
+                
+                result = await loop.run_in_executor(
+                    executor,
+                    lambda: subprocess.run(
+                        lp_command,
                         capture_output=True,
                         text=True,
                         timeout=60

@@ -83,7 +83,10 @@ class ScanBot:
                 InlineKeyboardButton("📊 Статус сканера", callback_data="status")
             ],
             [
-                InlineKeyboardButton("🗑️ Очистить старые файлы", callback_data="cleanup"),
+                InlineKeyboardButton("🖨️ Распечатать", callback_data="print"),
+                InlineKeyboardButton("🗑️ Очистить старые файлы", callback_data="cleanup")
+            ],
+            [
                 InlineKeyboardButton("❓ Помощь", callback_data="help")
             ]
         ]
@@ -125,6 +128,8 @@ class ScanBot:
             await self._handle_scan_callback(query)
         elif query.data == "status":
             await self._handle_status_callback(query)
+        elif query.data == "print":
+            await self._handle_print_callback(query, context)
         elif query.data == "cleanup":
             await self._handle_cleanup_callback(query)
         elif query.data == "help":
@@ -266,7 +271,7 @@ class ScanBot:
 
 *Основные функции:*
 • 🖨️ *Сканирование* - создает PDF/JPEG файл документа
-• 🖨️ *Печать* - отправляет файлы на печать (отправьте файл и упомяните бота @scan_2_telegram_bot)
+• 🖨️ *Распечатать* - отправляет файлы на печать (нажмите кнопку и отправьте файл)
 • 📊 *Статус* - показывает состояние сканера и принтера
 • 🗑️ *Очистка* - удаляет старые файлы сканирования
 • ❓ *Помощь* - это сообщение
@@ -277,20 +282,31 @@ class ScanBot:
 • Формат: {config.SCAN_FORMAT}
 
 *Печать файлов:*
+*Способ 1 (через кнопку):*
+• Нажмите кнопку "🖨️ Распечатать"
+• Отправьте файл в ответ на сообщение бота
+• Бот автоматически обработает и отправит файл на печать
+
+*Способ 2 (через упоминание):*
 • Отправьте файл (фото, PDF, документ) в группу
 • Упомяните бота в сообщении: @scan_2_telegram_bot
 • Бот автоматически отправит файл на печать
-• Поддерживаемые форматы: JPG, PNG, PDF, TXT и другие
+
+*Поддерживаемые форматы для печати:*
+• Изображения: JPG, PNG, GIF, BMP, TIFF
+• Документы: PDF, DOCX, DOC, TXT
+• Другие форматы обрабатываются автоматически
 
 *Автоматика:*
 • Файлы удаляются автоматически через {config.CLEANUP_AFTER_HOURS} часов
 • Максимальный размер файла: {config.MAX_FILE_SIZE_MB} МБ
 
 *Поддержка:*
-Если сканер не отвечает, попробуйте проверить:
+Если сканер или принтер не отвечают, попробуйте проверить:
 1. Включен ли принтер
 2. Подключен ли к сети Wi-Fi
-3. Нет ли бумаги в лотке"""
+3. Нет ли бумаги в лотке
+4. Используйте команду /status для проверки статуса"""
         
         # Кнопка возврата к меню
         back_keyboard = [[InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]]
@@ -300,6 +316,26 @@ class ScanBot:
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup(back_keyboard)
         )
+    
+    async def _handle_print_callback(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка нажатия кнопки печати"""
+        user_id = query.from_user.id
+        
+        # Устанавливаем флаг ожидания файла для печати
+        context.user_data['waiting_for_print'] = True
+        
+        # Кнопка возврата к меню
+        back_keyboard = [[InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")]]
+        
+        await query.edit_message_text(
+            "🖨️ *Распечатать документ*\n\n"
+            "Отправьте файл для печати (PDF, DOCX, изображения или другие поддерживаемые форматы).\n\n"
+            "Файл будет автоматически обработан и отправлен на принтер.",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(back_keyboard)
+        )
+        
+        logger.info(f"Пользователь {user_id} запросил печать через кнопку")
     
     async def _handle_back_to_menu(self, query):
         """Возврат к главному меню"""
@@ -321,7 +357,7 @@ class ScanBot:
 
 *Основные функции:*
 • 🖨️ *Сканирование* - создает PDF/JPEG файл документа
-• 🖨️ *Печать* - отправляет файлы на печать (отправьте файл и упомяните бота @scan_2_telegram_bot)
+• 🖨️ *Распечатать* - отправляет файлы на печать (нажмите кнопку и отправьте файл)
 • 📊 *Статус* - показывает состояние сканера и принтера
 • 🗑️ *Очистка* - удаляет старые файлы сканирования
 • ❓ *Помощь* - это сообщение
@@ -332,20 +368,31 @@ class ScanBot:
 • Формат: {config.SCAN_FORMAT}
 
 *Печать файлов:*
+*Способ 1 (через кнопку):*
+• Нажмите кнопку "🖨️ Распечатать"
+• Отправьте файл в ответ на сообщение бота
+• Бот автоматически обработает и отправит файл на печать
+
+*Способ 2 (через упоминание):*
 • Отправьте файл (фото, PDF, документ) в группу
 • Упомяните бота в сообщении: @scan_2_telegram_bot
 • Бот автоматически отправит файл на печать
-• Поддерживаемые форматы: JPG, PNG, PDF, TXT и другие
+
+*Поддерживаемые форматы для печати:*
+• Изображения: JPG, PNG, GIF, BMP, TIFF
+• Документы: PDF, DOCX, DOC, TXT
+• Другие форматы обрабатываются автоматически
 
 *Автоматика:*
 • Файлы удаляются автоматически через {config.CLEANUP_AFTER_HOURS} часов
 • Максимальный размер файла: {config.MAX_FILE_SIZE_MB} МБ
 
 *Поддержка:*
-Если сканер не отвечает, попробуйте проверить:
+Если сканер или принтер не отвечают, попробуйте проверить:
 1. Включен ли принтер
 2. Подключен ли к сети Wi-Fi
 3. Нет ли бумаги в лотке
+4. Используйте команду /status для проверки статуса
 
 Используйте кнопки ниже или команды: /scan, /status, /cleanup"""
         
@@ -539,11 +586,14 @@ class ScanBot:
             logger.debug("Запрос на печать от неавторизованного пользователя")
             return
         
+        # Проверяем, ожидает ли бот файл от пользователя (нажата кнопка "Распечатать")
+        waiting_for_print = context.user_data.get('waiting_for_print', False)
+        
         # Проверяем, что бот упомянут в сообщении или в подписи к файлу
         bot_mentioned = False
         bot_username = (await self.bot.get_me()).username.lower()
         
-        logger.info(f"Проверка упоминания бота. Username: {bot_username}")
+        logger.info(f"Проверка упоминания бота. Username: {bot_username}, waiting_for_print: {waiting_for_print}")
         
         # Проверяем упоминания в тексте сообщения
         if update.message.text:
@@ -583,9 +633,9 @@ class ScanBot:
                         logger.info(f"✅ Бот упомянут через caption_entity")
                         break
         
-        # Если бот не упомянут, игнорируем сообщение
-        if not bot_mentioned:
-            logger.info(f"❌ Бот не упомянут в сообщении, игнорируем. Username для проверки: @{bot_username}")
+        # Если бот не упомянут и пользователь не нажал кнопку "Распечатать", игнорируем сообщение
+        if not bot_mentioned and not waiting_for_print:
+            logger.info(f"❌ Бот не упомянут в сообщении и не ожидается файл, игнорируем. Username для проверки: @{bot_username}")
             return
         
         logger.info(f"Обработка запроса на печать от пользователя {update.effective_user.id}")
@@ -627,22 +677,39 @@ class ScanBot:
             await status_message.edit_text("🖨️ Отправляю на печать...")
             success = await printer.print_file(temp_file)
             
+            # Сбрасываем флаг ожидания файла после обработки
+            context.user_data['waiting_for_print'] = False
+            
             if success:
                 await status_message.edit_text(
                     f"✅ Файл отправлен на печать!\n\n"
                     f"📄 Файл: {file_name}\n"
                     f"🖨️ Принтер: {config.PRINTER_NAME}\n"
-                    f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+                    f"🕐 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}",
+                    reply_markup=self._get_main_keyboard()
                 )
                 logger.info(f"Файл {file_name} успешно отправлен на печать пользователем {user_id}")
             else:
-                await status_message.edit_text("❌ Не удалось отправить файл на печать. Проверьте статус принтера.")
+                await status_message.edit_text(
+                    "❌ Не удалось отправить файл на печать. Проверьте статус принтера.",
+                    reply_markup=self._get_main_keyboard()
+                )
                 
         except PrinterError as e:
-            await status_message.edit_text(f"❌ Ошибка печати: {e}\n\nПроверьте статус принтера командой /status")
+            # Сбрасываем флаг ожидания файла при ошибке
+            context.user_data['waiting_for_print'] = False
+            await status_message.edit_text(
+                f"❌ Ошибка печати: {e}\n\nПроверьте статус принтера командой /status",
+                reply_markup=self._get_main_keyboard()
+            )
             logger.error(f"Ошибка печати для пользователя {user_id}: {e}")
         except Exception as e:
-            await status_message.edit_text(f"❌ Неожиданная ошибка: {e}\n\nПопробуйте еще раз позже.")
+            # Сбрасываем флаг ожидания файла при ошибке
+            context.user_data['waiting_for_print'] = False
+            await status_message.edit_text(
+                f"❌ Неожиданная ошибка: {e}\n\nПопробуйте еще раз позже.",
+                reply_markup=self._get_main_keyboard()
+            )
             logger.error(f"Неожиданная ошибка при печати для пользователя {user_id}: {e}")
         finally:
             # Очистка временного файла
