@@ -723,11 +723,22 @@ class ScanBot:
         except PrinterError as e:
             # Сбрасываем флаг ожидания файла при ошибке
             context.user_data['waiting_for_print'] = False
+            error_message = str(e)
             await status_message.edit_text(
-                f"❌ Ошибка печати: {e}\n\nПроверьте статус принтера командой /status",
+                f"❌ Ошибка печати: {error_message}\n\nПроверьте статус принтера командой /status",
                 reply_markup=self._get_main_keyboard()
             )
             logger.error(f"Ошибка печати для пользователя {user_id}: {e}")
+            
+            # Если принтер недоступен, отправляем уведомление с упоминаниями
+            if "недоступен" in error_message.lower():
+                mentions = " ".join([f"@{username}" for username in config.PRINTER_ALERT_USERNAMES])
+                alert_text = f"⚠️ {mentions}\n\nВключите принтер"
+                try:
+                    await update.message.reply_text(alert_text, parse_mode='HTML')
+                    logger.info(f"Отправлено уведомление о недоступности принтера с упоминаниями: {mentions}")
+                except Exception as alert_error:
+                    logger.error(f"Не удалось отправить уведомление о принтере: {alert_error}")
         except Exception as e:
             # Сбрасываем флаг ожидания файла при ошибке
             context.user_data['waiting_for_print'] = False

@@ -28,6 +28,11 @@ SCAN_MODE = config('SCAN_MODE', default='Color')
 # Настройки принтера
 PRINTER_NAME = config('PRINTER_NAME', default='HP_Color_LaserJet_Pro_MFP_M177fw')
 PRINT_TEMP_DIR = Path(config('PRINT_TEMP_DIR', default='/tmp/print_queue'))
+PRINTER_ALERT_USERNAMES = [
+    username.strip()
+    for username in config('PRINTER_ALERT_USERNAMES', default='swift2geek,valterolga86,ekittz11').split(',')
+    if username.strip()
+]
 
 # Системные настройки
 MAX_FILE_SIZE_MB = config('MAX_FILE_SIZE_MB', default=50, cast=int)
