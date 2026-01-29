@@ -92,7 +92,47 @@ class Printer:
                 # Проверяем, что принтер не отключен
                 output_lower = result.stdout.lower()
                 if 'disabled' in output_lower:
-                    logger.warning(f"Принтер {printer_name} отключен")
+                    logger.warning(f"Принтер {printer_name} отключен, пытаюсь включить...")
+                    # Пытаемся автоматически включить принтер
+                    try:
+                        enable_result = await loop.run_in_executor(
+                            executor,
+                            lambda: subprocess.run(
+                                ['/usr/bin/cupsenable', printer_name],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                        )
+                        if enable_result.returncode == 0:
+                            logger.info(f"Принтер {printer_name} успешно включен")
+                            # Также принимаем задания в очередь
+                            await loop.run_in_executor(
+                                executor,
+                                lambda: subprocess.run(
+                                    ['/usr/bin/cupsaccept', printer_name],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5
+                                )
+                            )
+                            # Повторная проверка статуса
+                            result = await loop.run_in_executor(
+                                executor,
+                                lambda: subprocess.run(
+                                    ['/usr/bin/lpstat', '-p', printer_name],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=5
+                                )
+                            )
+                            if result.returncode == 0 and 'disabled' not in result.stdout.lower():
+                                logger.info(f"Принтер {printer_name} теперь доступен")
+                                return True
+                        else:
+                            logger.error(f"Не удалось включить принтер {printer_name}: {enable_result.stderr}")
+                    except Exception as enable_error:
+                        logger.error(f"Ошибка при попытке включить принтер {printer_name}: {enable_error}")
                     return False
                 if 'offline' in output_lower:
                     logger.warning(f"Принтер {printer_name} оффлайн")

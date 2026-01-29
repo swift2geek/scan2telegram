@@ -735,10 +735,11 @@ class ScanBot:
                 mentions = " ".join([f"@{username}" for username in config.PRINTER_ALERT_USERNAMES])
                 alert_text = f"⚠️ {mentions}\n\nВключите принтер"
                 try:
-                    await update.message.reply_text(alert_text, parse_mode='HTML')
-                    logger.info(f"Отправлено уведомление о недоступности принтера с упоминаниями: {mentions}")
+                    # Используем effective_chat для гарантированной отправки в чат
+                    await update.effective_chat.send_message(alert_text, parse_mode='HTML')
+                    logger.info(f"Отправлено уведомление о недоступности принтера в чат {update.effective_chat.id} с упоминаниями: {mentions}")
                 except Exception as alert_error:
-                    logger.error(f"Не удалось отправить уведомление о принтере: {alert_error}")
+                    logger.error(f"Не удалось отправить уведомление о принтере: {alert_error}", exc_info=True)
         except Exception as e:
             # Сбрасываем флаг ожидания файла при ошибке
             context.user_data['waiting_for_print'] = False
