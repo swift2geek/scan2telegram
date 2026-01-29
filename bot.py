@@ -125,7 +125,9 @@ class ScanBot:
         await query.answer()  # Убираем "часики" с кнопки
         
         if query.data == "scan":
-            await self._handle_scan_callback(query)
+            await self._handle_scan_source_choice(query, context)
+        elif query.data and query.data.startswith("scan_source:"):
+            await self._handle_scan_source_selected(query, context)
         elif query.data == "status":
             await self._handle_status_callback(query)
         elif query.data == "print":
@@ -137,58 +139,89 @@ class ScanBot:
         elif query.data == "back_to_menu":
             await self._handle_back_to_menu(query)
     
-    async def _handle_scan_callback(self, query):
-        """Обработка нажатия кнопки сканирования"""
+    def _get_scan_source_keyboard(self, sources):
+        """Клавиатура выбора источника сканирования. sources: [(sane_value, display_label), ...]."""
+        buttons = []
+        for i, (sane_value, label) in enumerate(sources):
+            buttons.append([InlineKeyboardButton(label, callback_data=f"scan_source:{i}")])
+        buttons.append([InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_menu")])
+        return InlineKeyboardMarkup(buttons)
+
+    async def _handle_scan_source_choice(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """Показать выбор источника сканирования или сразу запустить скан, если источников нет."""
         user_id = query.from_user.id
-        
-        # Обновляем сообщение на статус сканирования
-        await query.edit_message_text("🔄 Начинаю сканирование...\n\nПожалуйста, подождите...")
-        
         try:
-            logger.info(f"Пользователь {user_id} запросил сканирование через кнопку")
-            
-            # Выполнение сканирования
-            scan_file = await scanner.scan_document()
-            
+            sources = await scanner.get_scan_sources()
+        except Exception as e:
+            logger.warning("Не удалось получить источники сканирования: %s", e)
+            sources = []
+        if not sources:
+            await self._do_scan_and_send(query, context, source=None)
+            return
+        context.user_data["scan_sources"] = sources
+        await query.edit_message_text(
+            "Выберите источник сканирования:",
+            reply_markup=self._get_scan_source_keyboard(sources)
+        )
+        logger.info("Пользователь %s выбрал сканирование, показан выбор источника", user_id)
+
+    async def _handle_scan_source_selected(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка выбора источника: scan_source:0, scan_source:1, ..."""
+        try:
+            idx = int(query.data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            await query.edit_message_text(
+                "❌ Неверный выбор. Попробуйте снова.",
+                reply_markup=self._get_main_keyboard()
+            )
+            return
+        sources = context.user_data.get("scan_sources") or []
+        if idx < 0 or idx >= len(sources):
+            await query.edit_message_text(
+                "❌ Неверный выбор. Выберите действие:",
+                reply_markup=self._get_main_keyboard()
+            )
+            return
+        sane_value = sources[idx][0]
+        await self._do_scan_and_send(query, context, source=sane_value)
+
+    async def _do_scan_and_send(self, query, context: ContextTypes.DEFAULT_TYPE, source=None):
+        """Выполнить сканирование с выбранным источником и отправить файл (для callback от кнопок)."""
+        user_id = query.from_user.id
+        await query.edit_message_text("🔄 Начинаю сканирование...\n\nПожалуйста, подождите...")
+        try:
+            logger.info("Пользователь %s запросил сканирование (источник: %s)", user_id, source or "по умолчанию")
+            scan_file = await scanner.scan_document(source=source)
             if scan_file and scan_file.exists():
-                # Обновление статуса
                 await query.edit_message_text("📤 Отправляю отсканированный документ...")
-                
-                # Отправка файла
-                with open(scan_file, 'rb') as file:
+                with open(scan_file, "rb") as file:
                     await query.message.reply_document(
                         document=file,
                         filename=scan_file.name,
                         caption=f"📄 Документ отсканирован\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
                     )
-                
-                # Возвращаемся к главному меню
                 await query.edit_message_text(
                     "✅ Документ успешно отсканирован и отправлен!\n\nВыберите следующее действие:",
                     reply_markup=self._get_main_keyboard()
                 )
-                
-                logger.info(f"Файл {scan_file.name} отправлен пользователю {user_id}")
-                
+                logger.info("Файл %s отправлен пользователю %s", scan_file.name, user_id)
             else:
                 await query.edit_message_text(
                     "❌ Ошибка: файл сканирования не создан\n\nПопробуйте еще раз или проверьте статус сканера.",
                     reply_markup=self._get_main_keyboard()
                 )
-                
         except ScannerError as e:
             await query.edit_message_text(
                 f"❌ Ошибка сканера: {e}\n\nПопробуйте еще раз или обратитесь к администратору.",
                 reply_markup=self._get_main_keyboard()
             )
-            logger.error(f"Ошибка сканирования для пользователя {user_id}: {e}")
-            
+            logger.error("Ошибка сканирования для пользователя %s: %s", user_id, e)
         except Exception as e:
             await query.edit_message_text(
                 f"❌ Неожиданная ошибка: {e}\n\nПопробуйте еще раз позже.",
                 reply_markup=self._get_main_keyboard()
             )
-            logger.error(f"Неожиданная ошибка при сканировании для пользователя {user_id}: {e}")
+            logger.error("Неожиданная ошибка при сканировании для пользователя %s: %s", user_id, e)
     
     async def _handle_status_callback(self, query):
         """Обработка нажатия кнопки статуса"""
@@ -435,55 +468,55 @@ class ScanBot:
             await update.message.reply_text("❌ У вас нет доступа к этому боту.")
             return
         
-        # Отправка уведомления о начале сканирования
-        status_message = await update.message.reply_text("🔄 Начинаю сканирование...\n\nПожалуйста, подождите...")
-        
         try:
-            logger.info(f"Пользователь {user_id} запросил сканирование через команду")
-            
-            # Выполнение сканирования
+            sources = await scanner.get_scan_sources()
+        except Exception as e:
+            logger.warning("Не удалось получить источники сканирования: %s", e)
+            sources = []
+        if sources:
+            context.user_data["scan_sources"] = sources
+            await update.message.reply_text(
+                "Выберите источник сканирования:",
+                reply_markup=self._get_scan_source_keyboard(sources)
+            )
+            logger.info("Пользователь %s вызвал /scan, показан выбор источника", user_id)
+            return
+        
+        status_message = await update.message.reply_text("🔄 Начинаю сканирование...\n\nПожалуйста, подождите...")
+        try:
+            logger.info("Пользователь %s запросил сканирование через команду", user_id)
             scan_file = await scanner.scan_document()
-            
             if scan_file and scan_file.exists():
-                # Обновление статуса
                 await status_message.edit_text("📤 Отправляю отсканированный документ...")
-                
-                # Отправка файла
-                with open(scan_file, 'rb') as file:
+                with open(scan_file, "rb") as file:
                     await update.message.reply_document(
                         document=file,
                         filename=scan_file.name,
                         caption=f"📄 Документ отсканирован\n🕐 {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
                     )
-                
-                # Удаление статусного сообщения и показ меню
                 await status_message.delete()
                 await update.message.reply_text(
                     "✅ Документ успешно отсканирован и отправлен!\n\nВыберите следующее действие:",
                     reply_markup=self._get_main_keyboard()
                 )
-                
-                logger.info(f"Файл {scan_file.name} отправлен пользователю {user_id}")
-                
+                logger.info("Файл %s отправлен пользователю %s", scan_file.name, user_id)
             else:
                 await status_message.edit_text(
                     "❌ Ошибка: файл сканирования не создан\n\nПопробуйте еще раз или проверьте статус сканера.",
                     reply_markup=self._get_main_keyboard()
                 )
-                
         except ScannerError as e:
             await status_message.edit_text(
                 f"❌ Ошибка сканера: {e}\n\nПопробуйте еще раз или обратитесь к администратору.",
                 reply_markup=self._get_main_keyboard()
             )
-            logger.error(f"Ошибка сканирования для пользователя {user_id}: {e}")
-            
+            logger.error("Ошибка сканирования для пользователя %s: %s", user_id, e)
         except Exception as e:
             await status_message.edit_text(
                 f"❌ Неожиданная ошибка: {e}\n\nПопробуйте еще раз позже.",
                 reply_markup=self._get_main_keyboard()
             )
-            logger.error(f"Неожиданная ошибка при сканировании для пользователя {user_id}: {e}")
+            logger.error("Неожиданная ошибка при сканировании для пользователя %s: %s", user_id, e)
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /status"""

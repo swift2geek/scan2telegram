@@ -9,7 +9,7 @@ from PIL import Image
 import logging
 import tempfile
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from concurrent.futures import ThreadPoolExecutor
 import config
 
@@ -97,13 +97,78 @@ class HPScanner:
         except Exception as e:
             logger.error(f"Ошибка настройки сканера: {e}")
             raise ScannerError(f"Не удалось настроить сканер: {e}")
+
+    def _source_display_label(self, sane_value: str) -> str:
+        """Маппинг значения SANE source на подпись для кнопки."""
+        v = sane_value.lower().strip()
+        if v in ('flatbed', 'планшет'):
+            return "Планшет (под крышкой)"
+        if v in ('adf', 'document feeder', 'feeder', 'автоподача', 'фидер'):
+            return "Автоподача (фидер)"
+        if 'flatbed' in v or 'планшет' in v:
+            return "Планшет (под крышкой)"
+        if 'feeder' in v or 'adf' in v or 'document' in v:
+            return "Автоподача (фидер)"
+        return sane_value
+
+    def _get_scan_sources_sync(self) -> List[Tuple[str, str]]:
+        """Синхронное получение списка источников сканирования из SANE (вызывать из executor)."""
+        if not self.device:
+            return []
+        try:
+            optlist = getattr(self.device, 'optlist', None) or []
+            source_opt_name = None
+            for name in ('source', 'scan-source', 'source-name'):
+                if name in optlist:
+                    source_opt_name = name
+                    break
+            if not source_opt_name:
+                logger.debug("Опция выбора источника не найдена в optlist: %s", optlist)
+                return []
+            opt = self.device.opt.get(source_opt_name)
+            if opt is None:
+                return []
+            constraint = getattr(opt, 'constraint', None)
+            if not constraint or not isinstance(constraint, (list, tuple)):
+                return []
+            result = []
+            for val in constraint:
+                if isinstance(val, str) and val.strip():
+                    label = self._source_display_label(val)
+                    result.append((val, label))
+            return result
+        except Exception as e:
+            logger.warning("Не удалось получить источники сканирования: %s", e)
+            return []
+
+    async def get_scan_sources(self) -> List[Tuple[str, str]]:
+        """Список доступных источников сканирования: [(sane_value, display_label), ...]."""
+        if not self.is_initialized:
+            await self.initialize()
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            return await loop.run_in_executor(executor, self._get_scan_sources_sync)
     
-    async def scan_document(self) -> Optional[Path]:
-        """Сканирование документа"""
+    async def scan_document(self, source: Optional[str] = None) -> Optional[Path]:
+        """Сканирование документа. source — значение SANE для выбора источника (планшет/фидер)."""
         if not self.is_initialized:
             await self.initialize()
         
         try:
+            if source:
+                try:
+                    optlist = getattr(self.device, 'optlist', None) or []
+                    for name in ('source', 'scan-source', 'source-name'):
+                        if name not in optlist:
+                            continue
+                        attr = name.replace('-', '_')
+                        if hasattr(self.device, attr):
+                            setattr(self.device, attr, source)
+                            logger.info("Установлен источник сканирования: %s", source)
+                            break
+                except Exception as e:
+                    logger.warning("Не удалось установить источник сканирования %s: %s", source, e)
+            
             logger.info("Начало сканирования...")
             
             # Выполнение сканирования (совместимость с Python 3.7)
