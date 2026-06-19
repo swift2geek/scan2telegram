@@ -1,0 +1,16 @@
+.env
+config.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.cursor/
+scans/
+*.log
+*.png
+*.jpg
+*.jpeg
+*.pdf
+.DS_Store

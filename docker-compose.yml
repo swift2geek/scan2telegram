@@ -1,0 +1,11 @@
+services:
+  scan2telegram:
+    build: .
+    container_name: scan2telegram
+    restart: unless-stopped
+    # Host networking is required: the HPLIP/hpaio network scan channel does not
+    # work through Docker bridge NAT.
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ./scans:/app/scans
