@@ -32,5 +32,11 @@ if [ -n "$PRINTER_NAME" ] && ! lpstat -p "$PRINTER_NAME" >/dev/null 2>&1; then
   fi
 fi
 
+# Optional: Uptime Kuma push heartbeat (set KUMA_PUSH_URL in .env to enable).
+if [ -n "${KUMA_PUSH_URL:-}" ]; then
+  ( while true; do curl -fsS --max-time 10 "$KUMA_PUSH_URL" >/dev/null 2>&1 || true; sleep "${KUMA_PUSH_INTERVAL:-30}"; done ) &
+  echo "[entrypoint] Uptime Kuma heartbeat enabled (every ${KUMA_PUSH_INTERVAL:-30}s)"
+fi
+
 echo "[entrypoint] starting scan2telegram..."
 exec python main.py
